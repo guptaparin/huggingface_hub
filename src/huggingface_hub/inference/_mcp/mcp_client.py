@@ -88,6 +88,7 @@ class MCPClient:
         if model is None and base_url is None:
             raise ValueError("At least one of `model` or `base_url` should be set in `MCPClient`.")
         self.payload_model = model
+        self._uses_base_url = base_url is not None
         self.client = AsyncInferenceClient(
             model=None if base_url is not None else model,
             provider=provider,
@@ -105,6 +106,29 @@ class MCPClient:
         """Exit the context manager"""
         await self.client.__aexit__(exc_type, exc_val, exc_tb)
         await self.cleanup()
+
+    def set_model(self, model: str, provider: Optional[PROVIDER_OR_POLICY_T] = None) -> None:
+        """Change the model (and optionally the provider) used for inference, without touching MCP servers.
+
+        Connected MCP servers, discovered tools and sessions are kept as they are. The new configuration applies to
+        the next inference request; a request already in flight is not affected.
+
+        Args:
+            model (`str`):
+                The new model to run inference with.
+            provider (`str`, *optional*):
+                The new provider. If not provided, the current provider is kept.
+                Ignored if `MCPClient` was created with `base_url`.
+        """
+        if not model:
+            raise ValueError("`model` must be a non-empty string.")
+        self.payload_model = model
+        if self._uses_base_url:
+            # `base_url` takes precedence for routing: only the model name sent in the payload changes.
+            return
+        self.client.model = model
+        if provider is not None:
+            self.client.provider = provider  # type: ignore[assignment]
 
     async def cleanup(self):
         """Clean up resources"""
